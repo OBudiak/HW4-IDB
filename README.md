@@ -34,9 +34,8 @@ erDiagram
 * **1\:N** між Products → ProductConfigurations, Clients → Orders, Orders → OrderItems
 * **M\:N** через сполучні таблиці ManufacturingUsedMaterials та OrderItems
 
----
-
 ![tree_bm](https://github.com/user-attachments/assets/7592c9ea-1409-4d23-9a2a-9322be17e009)
+---
 
 
 ## 3. Реалізація
@@ -106,6 +105,7 @@ erDiagram
 ---
 
 **Під час виправлення багів та налаштувань було створено стільки рядків:**
+
 ![Кількість рядків в базі даних](https://github.com/user-attachments/assets/9b59e4a1-6346-4be7-950b-f40fef3bffb5)
 
 
