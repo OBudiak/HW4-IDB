@@ -1,139 +1,97 @@
-## 1. Бізнес-розуміння
+# TreeBM – Business Management System
 
-* **Домен**: Операційна база даних для управління виробництвом і продажем готових виробів, сировини, клієнтів та замовлень у B2B-середовищі.
-* **Проблема**: Необхідно контролювати запаси сировини, різні конфігурації продуктів, партії на складах, історію замовлень, процеси виробництва та рекламації, щоб підтримувати ключові показники ефективності (KPI): рівень запасів, швидкість виконання замовлень, витрати матеріалів і т. д.
-* **Критичні сутності**:
+## 1. Overview
 
-  * **RawMaterials** – сировина для виробництва
-  * **Products** – готові вироби
-  * **ProductConfigurations** – варіанти продуктів із власними цінами й запасами
-  * **ProductItems** – партії за конфігураціями на конкретних складах
-  * **Clients** – бізнес-клієнти
-  * **Orders** та **OrderItems** – замовлення та їхні позиції
-  * **ManufacturingItems**, **ManufacturingUsedMaterials**, **DefectedProducts** – виробничі партії, витрати матеріалів, брак
+TreeBM is an operational database designed to manage the end-to-end lifecycle of products, from raw materials through manufacturing to sales and distribution. It supports inventory tracking, order processing, client management and production workflows, providing a centralized, scalable backbone for business operations.
 
-Ці дані дозволяють формувати звіти про топ-продажі, LTV клієнтів, ефективність використання сировини тощо.
+## 2. Business Understanding
 
----
+**Domain**: Manufacturing and e-commerce of configurable products
 
-## 2. Модель даних і зв’язки
+**Problem statement**: Coordinate procurement of raw materials, manufacturing steps, inventory management across multiple warehouses, and order fulfillment while maintaining data consistency and performance at scale.
 
-* **1\:N** між Products → ProductConfigurations, Clients → Orders, Orders → OrderItems
-* **M\:N** через сполучні таблиці ManufacturingUsedMaterials та OrderItems
+**Key entities**:
 
-![tree_bm](https://github.com/user-attachments/assets/7592c9ea-1409-4d23-9a2a-9322be17e009)
----
+* **Raw Materials**: fundamental inputs for production, tracked by stock levels.
+* **Products & Configurations**: finished goods and their variants, with independent pricing and stock.
+* **Storage Fields**: physical warehouse locations for batches.
+* **Clients & Orders**: customer information and their purchase history.
+* **Manufacturing Items & Usage**: linkage between produced batches and consumed raw materials.
+
+This model enables tracking KPIs such as throughput, stock turnover, order fulfillment times, and top-selling configurations.
+
+## 3. Schema Design & Relationships
+
+* **One-to-many**: A single product → multiple configurations; a client → multiple orders; an order → multiple order items; a configuration → multiple inventory batches.
+* **Many-to-many**: Manufacturing items consume multiple raw materials via a junction table `manufacturing_used_materials`.
+* **Constraints & Integrity**:
+
+  * `NOT NULL`, `UNIQUE`, `CHECK` on prices and stock ≥ 0
+  * `FOREIGN KEY` with `ON DELETE CASCADE` for referential integrity
+  * Indexes on join and filter columns for performance (e.g., `orders(client_id, order_date)`).
+
+## 4. Entity-Relationship Diagram
+
+![tree_bm](https://github.com/user-attachments/assets/9140ab76-cbdf-43c1-9846-14f855eaacd4)
 
 
-## 3. Реалізація
+## 5. Implementation of Assignment Requirements
 
-### 3.1. Таблиці й обмеження
+| Requirement                                       | Implementation                                             |
+| ------------------------------------------------- | ---------------------------------------------------------- |
+| Operational DB for chosen use case                | Full schema covering procurement → manufacturing → sales   |
+| Entity relationships (1:1, 1\:m, m\:n)            | See Section 3                                              |
+| Constraints: NOT NULL, UNIQUE, CHECK, FOREIGN KEY | Defined in DDL and via `comments_and_indexes.sql`          |
+| Indexes for optimization                          | Added key indexes in `comments_and_indexes.sql`            |
+| Comments on tables and columns                    | All tables/columns commented in `comments_and_indexes.sql` |
+| ERD presentation                                  | Reference in Section 4                                     |
+| Correct database terminology in documentation     | Throughout README and code comments                        |
+| Business understanding                            | Detailed in Section 2                                      |
+| **Additional Points**                             |                                                            |
+| 3 users with different privileges                 | Created in `queries_and_triggers.sql`                      |
+| 1 view for reporting                              | `vw_order_summary` in `queries_and_triggers.sql`           |
+| Stored procedure                                  | `sp_get_orders_by_client` in `queries_and_triggers.sql`    |
+| Trigger/function                                  | Triggers on `order_items` before/after insert              |
 
-* Всі **PRIMARY KEY** і **FOREIGN KEY** визначені в DDL (InnoDB автоматично створює індекси) .
-* Додані **CHECK-констрейнти** для бізнес-правил:
+## 6. Usage Examples
+
+* **Count rows in all tables**: Use the provided query in `queries_and_triggers.sql` to iterate over `information_schema.tables` and return row counts per table:
 
   ```sql
-  ALTER TABLE products
-    ADD CONSTRAINT chk_products_price CHECK (price  >= 0),
-    ADD CONSTRAINT chk_products_stock CHECK (stock  >= 0);
-  ALTER TABLE product_configurations
-    ADD CONSTRAINT chk_cfg_price      CHECK (price  >= 0),
-    ADD CONSTRAINT chk_cfg_stock      CHECK (stock  >= 0);
-  ALTER TABLE raw_materials
-    ADD CONSTRAINT chk_rm_stock       CHECK (stock  >= 0);
+  SELECT table_name,
+         table_rows
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE();
   ```
-* Додані **UNIQUE-ключі** для запобігання дублікатам:
+* **Fetch client orders**: Retrieve an individual client’s full order history, including items:
 
   ```sql
-  ALTER TABLE storage_fields ADD UNIQUE KEY uk_storage_code (code);
-  ALTER TABLE clients        ADD UNIQUE KEY uk_clients_email (email);
-  ALTER TABLE clients        ADD UNIQUE KEY uk_clients_phone (phone);
+  CALL sp_get_orders_by_client(123);
   ```
-
-### 3.2. Індексація
-
-* PK/FK → автоматичні індекси.
-* Додаткові індекси для звітності та приєднань:
+* **Check product stock**: Verify current stock for a specific product configuration:
 
   ```sql
-  CREATE INDEX idx_orders_client_date   ON orders          (client_id, order_date);
-  CREATE INDEX idx_order_items_order    ON order_items     (order_id);
-  CREATE INDEX idx_prod_items_config    ON product_items   (configuration_id);
+  SELECT configuration_id, stock
+  FROM product_configurations
+  WHERE configuration_id = 456;
+  ```
+* **Process a new order**: Insert into `orders` and `order_items`; built-in triggers will:
+
+  1. Validate and deduct raw material and product stock
+  2. Update the order total
+  3. Maintain audit trails
+     Example transaction:
+
+  ```sql
+  START TRANSACTION;
+    INSERT INTO orders(client_id, order_date) VALUES (123, NOW());
+    INSERT INTO order_items(order_id, configuration_id, quantity, unit_price)
+    VALUES (LAST_INSERT_ID(), 789, 5, 100);
+  COMMIT;
   ```
 
-### 3.3. Користувачі й права
+## 7. Data insertion
 
-* **reader@%**      – тільки `SELECT`
-* **storage\_manager@%** – `SELECT`, `UPDATE`
-* **manager@%**     – `SELECT`, `INSERT`, `UPDATE`, `DELETE`
-* **analyst@%**     – `SELECT`, `SHOW VIEW`&#x20;
+**Note:** The count of rows differs from the parameters in settings because it was calculated manually after all debugging and setup were completed, using a UNION ALL. 
 
-### 3.4. View, процедура, тригери
-
-* **View** `vw_order_summary` – зведення замовлень із іменами клієнтів&#x20;
-* **SP** `sp_get_orders_by_client(IN p_client_id)` – всі замовлення клієнта&#x20;
-* **Triggers** на `order_items`:
-
-  1. **BEFORE INSERT** – якщо `price_per_unit = 0` → підставити ціну з конфігурації
-  2. **AFTER INSERT** – зменшити запаси в конфігурації, у продукті, у партії (FIFO) і оновити `orders.total_price`&#x20;
-
-### 3.5. Заселення даних
-
-* **Seed-скрипти** вставляють:
-
-  * 50 raw\_materials
-  * 100 products (+ їх конфігурації)
-  * 10 складів
-  * 200 000 партій product\_items
-  * 20 000 клієнтів
-  * 500 000 orders + order\_items (зі виводом прогресу кожні 1000)
-  * manufacturing\_items, manufacturing\_used\_materials, defected\_products&#x20;
-
----
-
-**Під час виправлення багів та налаштувань було створено стільки рядків:**
-
-![Кількість рядків в базі даних](https://github.com/user-attachments/assets/9b59e4a1-6346-4be7-950b-f40fef3bffb5)
-
-
-## 4. Коментарі (документація)
-
-**Додано коментарі до кожної таблиці** та приклад для стовпців:
-
-```sql
--- Коментарі до таблиць
-ALTER TABLE raw_materials        COMMENT 'Сировина, що використовується у виробництві';
-ALTER TABLE products             COMMENT 'Готова продукція, доступна до продажу';
-ALTER TABLE product_configurations COMMENT 'Варіанти продукції з власними цінами та запасом';
--- (зробити те саме для інших таблиць)
-
--- Приклад коментарів до стовпців у raw_materials
-ALTER TABLE raw_materials MODIFY id          INT AUTO_INCREMENT COMMENT 'PK таблиці raw_materials';
-ALTER TABLE raw_materials MODIFY name        VARCHAR(100)      COMMENT 'Назва матеріалу';
-ALTER TABLE raw_materials MODIFY stock       INT NOT NULL      COMMENT 'Кількість доступного запасу';
-```
-
----
-
-## 5. ERD
-
-Див. розділ 2: Mermaid-діаграма відображає PK/FK-зв’язки й проміжні таблиці .
-
----
-
-## 6. Пояснення рішення
-
-* **OLTP**: оптимізовано під високочастотні транзакції (500 000+ вставок) і реальне оновлення запасів.
-* **Нормалізація** до 3NF: немає дублювання даних (унікальні справи про продукти, замовлення тощо).
-* **Індекси** забезпечують швидкі JOIN’и й фільтрацію.
-* **SP/тригери** інкапсулюють бізнес-логіку в БД, гарантують консистентність (автопідстановка ціни, автоматичні списання запасів).
-* **Розмежування прав** – чітке розділення обов’язків між ролями (читання, оновлення, адміністрування).
-
----
-
-## 7. KPI та бізнес-використання
-
-* **Оборот запасів**: через ManufacturingUsedMaterials і тригери.
-* **Швидкість виконання замовлень**: моніторинг `orders.status` + `order_date`.
-* **LTV клієнта**: агрегація через `vw_order_summary`.
-* **Рівень браку**: аналіз `defected_products` у порівнянні з виробничими партіями.
+![Кількість рядків в базі даних](https://github.com/user-attachments/assets/6a6ddb2c-cce0-433e-b885-6691c7b4d673)
