@@ -18,19 +18,6 @@
 
 ## 2. Модель даних і зв’язки
 
-```mermaid
-erDiagram
-    RAW_MATERIALS ||--o{ MANUFACTURING_USED_MATERIALS : uses
-    MANUFACTURING_ITEMS ||--o{ MANUFACTURING_USED_MATERIALS : contains
-    MANUFACTURING_ITEMS ||--o{ DEFECTED_PRODUCTS          : may_have
-    PRODUCT_CONFIGURATIONS ||--o{ PRODUCT_ITEMS           : stocked_as
-    PRODUCTS ||--o{ PRODUCT_CONFIGURATIONS             : defines
-    PRODUCT_ITEMS ||--o{ MANUFACTURING_ITEMS            : feeds
-    PRODUCT_CONFIGURATIONS ||--o{ ORDER_ITEMS             : ordered_as
-    CLIENTS ||--o{ ORDERS                               : places
-    ORDERS ||--o{ ORDER_ITEMS                           : contains
-```
-
 * **1\:N** між Products → ProductConfigurations, Clients → Orders, Orders → OrderItems
 * **M\:N** через сполучні таблиці ManufacturingUsedMaterials та OrderItems
 
