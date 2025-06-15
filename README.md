@@ -54,53 +54,85 @@ This model enables tracking of KPIs such as throughput, stock turnover, order fu
 
 ## 6. Usage Examples
 
-* **Count rows in all tables**: Use the query in `queries_and_triggers.sql`:
+* **Count rows in all tables**: Execute the block in `queries_and_triggers.sql` to list all table row counts:
 
   ```sql
-  SELECT table_name,
-         table_rows
-  FROM information_schema.tables
-  WHERE table_schema = DATABASE();
+  SELECT 'raw_materials' AS `Table`, COUNT(*) AS `Rows` FROM raw_materials
+  UNION ALL
+  SELECT 'products',       COUNT(*) FROM products
+  UNION ALL
+  SELECT 'storage_fields', COUNT(*) FROM storage_fields
+  UNION ALL
+  SELECT 'clients',        COUNT(*) FROM clients
+  UNION ALL
+  SELECT 'product_configurations', COUNT(*) FROM product_configurations
+  UNION ALL
+  SELECT 'orders',         COUNT(*) FROM orders
+  UNION ALL
+  SELECT 'product_items',  COUNT(*) FROM product_items
+  UNION ALL
+  SELECT 'order_items',    COUNT(*) FROM order_items
+  UNION ALL
+  SELECT 'defected_products', COUNT(*) FROM defected_products
+  UNION ALL
+  SELECT 'manufacturing_items', COUNT(*) FROM manufacturing_items
+  UNION ALL
+  SELECT 'manufacturing_used_materials', COUNT(*) FROM manufacturing_used_materials
+  ORDER BY `Table`;
   ```
-* **Fetch client orders**: Retrieve a client’s full order history:
+
+* **Fetch client orders**: Call the stored procedure to get a client’s orders:
 
   ```sql
   CALL sp_get_orders_by_client(123);
   ```
-* **Check product stock**: View current stock for a specific configuration:
+
+* **Check configuration stock**: Query the current stock of a specific product configuration:
 
   ```sql
-  SELECT configuration_id,
-         stock
-    FROM product_configurations
-   WHERE configuration_id = 456;
+  SELECT
+    id        AS configuration_id,
+    stock
+  FROM product_configurations
+  WHERE id = 456;
   ```
-* **Process a new order**: Insert into `orders` and `order_items`. Built-in triggers will:
 
-  1. Validate and deduct raw material and product stock
-  2. Update the order total
-  3. Maintain audit trails
+* **Process a new order**:
 
-  Example transaction:
+  1. Insert a new order (initial `total_price` set to 0):
 
-  ```sql
-  START TRANSACTION;
-    INSERT INTO orders(client_id, order_date)
-    VALUES (123, NOW());
+     ```sql
+     START TRANSACTION;
+       INSERT INTO orders(client_id, total_price, status)
+       VALUES (123, 0, 'new');
+       SET @order_id = LAST_INSERT_ID();
+     ```
+  2. Add items—leave `price_per_unit` NULL to let the trigger fetch the correct price:
 
-    INSERT INTO order_items(
+     ```sql
+     INSERT INTO order_items (
       order_id,
       configuration_id,
-      quantity,
-      unit_price
-    ) VALUES (
-      LAST_INSERT_ID(),
-      789,
-      5,
-      100
-    );
-  COMMIT;
-  ```
+      price_per_unit,
+      quantity
+      )
+     SELECT
+      @order_id,
+      pc.id,
+      pc.price,
+      5
+     FROM product_configurations AS pc
+     WHERE pc.id = 789;
+     
+     ```
+  3. Commit and let triggers handle pricing, stock deduction, and order total update:
+
+     ```sql
+     COMMIT;
+     ```
+
+  **Note**: If you see a foreign key error like `Cannot add or update a child row... FOREIGN KEY (configuration_id) REFERENCES product_configurations(id)`, ensure that the `configuration_id` you insert exists in `product_configurations` (column `id`) and that you have created the related `orders` row first.
+
 
 ## 7. Data Insertion
 
